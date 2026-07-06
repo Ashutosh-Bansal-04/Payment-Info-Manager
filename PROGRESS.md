@@ -339,3 +339,72 @@ frontend/src/
 ├── pages/Register.jsx    ← confirm password + client-side validation + API call
 └── styles/auth.css       ← premium card layout, animations, gradient button
 ```
+
+---
+
+## Step 9: ManagePayments Page (full CRUD UI + PaymentModal) — 2026-07-07
+
+**What I built:**
+- **`pages/ManagePayments.jsx`** — the core screen:
+  - Fetches user's payment methods on mount via `GET /api/payments`.
+  - Renders a scrollable card list with type icon/badge, masked/truncated headline, edit ✏️ and delete 🗑️ action buttons.
+  - "＋ Add Payment Method" dashed button opens the modal in add mode.
+  - Edit button opens the modal pre-filled. Delete button shows a confirmation overlay.
+  - Loading spinner, error banner, and friendly empty state with emoji.
+- **`components/PaymentModal.jsx`** — bottom-sheet-style modal:
+  - Payment type chip selector (Bank/Paytm/UPI/PayPal/USDT).
+  - Conditional form fields rendered based on selected type.
+  - Client-side validation before save. Type is locked in edit mode.
+  - Save calls the parent's `onSave()` which hits POST (add) or PUT (edit).
+- **`components/Navbar.jsx`** — sticky top nav with brand, active link highlighting, admin link for admin users, logout.
+- **`styles/payments.css`** — mobile-first cards, bottom-sheet with slide-up animation, chip selector, conditional fields fade-in, delete confirmation overlay, spinner.
+- **`styles/navbar.css`** — top navigation bar styles.
+- Updated `Dashboard.jsx` and `AdminPanel.jsx` to include the Navbar.
+
+**How conditional form fields work in the modal:**
+
+The modal uses a `FIELD_DEFS` map — the same pattern as the backend's `FIELDS_BY_TYPE`:
+
+```js
+const FIELD_DEFS = {
+  Bank:   [{ key: 'ifscCode', label: 'IFSC Code', placeholder: '...' }, ...],
+  Paytm:  [{ key: 'paytmNumber', ... }],
+  UPI:    [{ key: 'upiId', ... }],
+  ...
+};
+```
+
+When the user selects a `paymentType`, the component reads `FIELD_DEFS[paymentType]` and renders only those inputs:
+
+```jsx
+{currentDefs.map((f) => (
+  <div className="form-group" key={f.key}>
+    <label>{f.label}</label>
+    <input value={fields[f.key]} onChange={...} />
+  </div>
+))}
+```
+
+This means:
+- **Adding a new payment type** = one new entry in `FIELD_DEFS` + a chip label. No if/else chains.
+- **Validation** iterates the same array: if any field in `FIELD_DEFS[paymentType]` is empty, the save is blocked.
+- **Edit mode** pre-fills `fields` from `initialData` using the same `FIELD_DEFS` keys.
+
+**Why the backend ownership check (Step 5) means this page is inherently safe:**
+
+The backend's `GET /api/payments` handler filters by `{ user: req.user._id }` — it physically cannot return another user's documents. Even if someone modified the frontend code to try requesting someone else's data, the server would only ever return documents belonging to the JWT holder. Similarly, PUT and DELETE verify `method.user === req.user._id` before acting. This page doesn't implement any ownership logic because **the API layer already guarantees it**.
+
+**Key files:**
+```
+frontend/src/
+├── components/
+│   ├── PaymentModal.jsx    ← add/edit bottom-sheet, conditional fields, type chips
+│   └── Navbar.jsx          ← top navigation bar
+├── pages/
+│   ├── ManagePayments.jsx  ← card list + CRUD + empty/loading/error states
+│   ├── Dashboard.jsx       ← updated with Navbar
+│   └── AdminPanel.jsx      ← updated with Navbar
+└── styles/
+    ├── payments.css        ← cards, modal, chips, animations, empty state
+    └── navbar.css          ← top nav styles
+```
