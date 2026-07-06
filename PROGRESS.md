@@ -114,3 +114,34 @@ backend/src/
 ├── routes/authRoutes.js            ← POST /register, POST /login
 └── server.js                       ← mounted /api/auth
 ```
+
+---
+
+## Step 4: PaymentMethod Schema (single-collection, conditional validation) — 2026-07-06
+
+**What I built:**
+- **`models/PaymentMethod.js`** — Mongoose schema storing all 5 payment types in one collection:
+  - Common fields: `user` (ObjectId ref), `paymentType` (enum), `timestamps`.
+  - Bank: `accountHolderName`, `accountNumber`, `ifscCode`, `bankName`, `branchName`.
+  - Paytm: `paytmNumber` · UPI: `upiId` · PayPal: `paypalEmail` · USDT: `usdtAddress`.
+- **Conditional `required` validation** via a `conditionalRequired(type, label)` helper that returns a Mongoose required-function. At validation time, the function checks `this.paymentType` — if it matches, the field is required; otherwise it's optional. Fully documented with inline comments.
+- **`toJSON` transform** strips any fields that belong to *other* payment types. A UPI document's JSON will only contain `{ _id, user, paymentType, upiId, createdAt, updatedAt }` — no `accountNumber`, no `paytmNumber`, etc.
+- **`FIELDS_BY_TYPE` map** is the single source of truth used by both the validator and the transform, so adding a 6th payment type later means editing one map + adding the schema fields.
+
+**Why — one flexible collection vs. 5 separate collections:**
+
+| Consideration | One collection (chosen ✅) | 5 collections |
+|--------------|---------------------------|---------------|
+| **Simplicity** | Single model, single CRUD controller, one set of routes | 5 models, 5 controllers, 5 route files — lots of duplication |
+| **Admin queries** | `PaymentMethod.find()` returns all methods across all types; easy to filter with `{ paymentType: 'UPI' }` | Must query 5 collections and merge results |
+| **Adding a new type** | Add an enum value + fields + one entry in `FIELDS_BY_TYPE` | Create an entire new model/controller/route stack |
+| **Schema tightness** | Some fields are `null`/absent on documents where they don't apply (mitigated by conditional required + toJSON transform) | Each collection only has its own fields — perfectly tight |
+| **Indexing** | Compound index on `{ user, paymentType }` covers the common query pattern | Each collection only needs `{ user }` |
+
+**Trade-off accepted:** A Bank document will have empty `upiId`/`paytmNumber`/etc. fields at the storage level, but this is negligible overhead (a few null keys) compared to the massive reduction in code duplication. The `toJSON` transform ensures the API consumer never sees these unused fields.
+
+**Key files:**
+```
+backend/src/
+└── models/PaymentMethod.js   ← single-collection schema with conditional validation + toJSON transform
+```
