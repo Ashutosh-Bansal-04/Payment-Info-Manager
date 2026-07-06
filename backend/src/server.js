@@ -14,9 +14,11 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Future route mounts will go here:
-// app.use('/api/auth', require('./routes/auth.routes'));
-// app.use('/api/payments', require('./routes/payment.routes'));
+// Auth routes
+app.use('/api/auth', require('./routes/authRoutes'));
+
+// Future route mounts:
+// app.use('/api/payments', require('./routes/paymentRoutes'));
 
 // --------------- Start ---------------
 const PORT = process.env.PORT || 5000;

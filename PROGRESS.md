@@ -74,3 +74,43 @@ backend/src/
 ├── routes/            ← empty, ready for auth & payment routes
 └── utils/             ← empty, ready for token helpers
 ```
+
+---
+
+## Step 3: Authentication (JWT + bcrypt) — 2026-07-06
+
+**What I built:**
+- **`models/User.js`** — Mongoose schema with `username`, `email` (unique, lowercase), `password` (bcrypt hash), `role` (enum: user/admin, default user), and `timestamps: true`.
+- **`controllers/authController.js`** — Two handlers:
+  - `register`: validates required fields + email format + min 6-char password → checks for duplicate email → hashes password with bcrypt (10 salt rounds) → creates user → returns JWT + sanitised user (no password field).
+  - `login`: validates input → finds user by email → compares password hash → returns JWT + user. Uses a single *"Invalid email or password"* message on failure so an attacker can't enumerate valid emails.
+- **`middleware/authMiddleware.js`** — Two guards:
+  - `protect`: extracts `Bearer <token>` from `Authorization` header → verifies with `jwt.verify` → loads user from DB (minus password) → attaches to `req.user`. Distinct 401 messages for missing/expired/invalid tokens.
+  - `adminOnly`: checks `req.user.role === 'admin'`, returns 403 otherwise. Always used *after* `protect`.
+- **`routes/authRoutes.js`** — Thin router mapping `POST /register` and `POST /login` to controller functions.
+- **`server.js`** — Mounted auth routes at `/api/auth`.
+
+**Why — security & architectural decisions:**
+
+1. **Passwords are hashed, never stored in plaintext.** If the database is ever compromised (backup leak, injection attack, insider threat), attackers get useless bcrypt hashes instead of real passwords. bcrypt is intentionally slow (cost factor 10 ≈ ~100 ms/hash) which makes brute-force attacks impractical even with modern GPUs. We use `bcryptjs` (pure JS) to avoid native C++ build dependencies.
+
+2. **JWT instead of server-side sessions** because:
+   - This app will be a single-page React frontend talking to a stateless REST API — JWTs let the server stay completely stateless (no session store, no sticky sessions).
+   - The token is self-contained: the server only needs the `JWT_SECRET` to verify it, which simplifies horizontal scaling (any server instance can validate any request).
+   - 7-day expiry balances convenience (users don't have to log in every session) with security (tokens aren't permanent).
+
+3. **`protect` + `adminOnly` middleware pair** — designed for composability:
+   - Public routes: no middleware.
+   - User routes (e.g. manage own payment methods): `router.use(protect)` — any authenticated user.
+   - Admin routes (e.g. list all users, delete any payment): `router.use(protect, adminOnly)` — must be authenticated *and* have `role: "admin"`.
+   - This pair will be reused verbatim on `paymentRoutes` and any future admin routes without duplicating auth logic.
+
+**Key files:**
+```
+backend/src/
+├── models/User.js                  ← Mongoose schema (username, email, password hash, role)
+├── controllers/authController.js   ← register & login logic
+├── middleware/authMiddleware.js     ← protect (JWT verify) & adminOnly (role gate)
+├── routes/authRoutes.js            ← POST /register, POST /login
+└── server.js                       ← mounted /api/auth
+```
