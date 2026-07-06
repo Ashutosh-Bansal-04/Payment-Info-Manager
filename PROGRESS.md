@@ -233,3 +233,68 @@ backend/src/
 ├── routes/adminRoutes.js            ← GET /payments behind protect + adminOnly
 └── server.js                        ← mounted /api/admin
 ```
+
+---
+
+## Step 7: Frontend Scaffolding (Vite + React Router + AuthContext) — 2026-07-07
+
+**What I built:**
+- **`api/axiosClient.js`** — axios instance with `baseURL` from `VITE_API_BASE_URL` env var, a request interceptor that auto-attaches the JWT from localStorage, and a response interceptor that clears auth + redirects on 401.
+- **`api/index.js`** — centralised API call functions (`registerUser`, `loginUser`, `getMyPayments`, `addPayment`, `updatePayment`, `deletePayment`, `getAdminPayments`).
+- **`context/AuthContext.jsx`** — React context storing `{ user, token }`. Provides `login()` (saves to state + localStorage) and `logout()` (clears both). Rehydrates from localStorage on mount so page refresh preserves the session.
+- **`components/ProtectedRoute.jsx`** — route wrapper that redirects to `/login` if not authenticated, or to `/payments` if `adminOnly` is set and the user isn't an admin.
+- **5 pages:** `Login`, `Register`, `Dashboard`, `ManagePayments` (placeholder), `AdminPanel` (placeholder).
+- **`styles/global.css`** — design tokens, reset, form styles, button utilities. **`styles/auth.css`** — auth page card layout.
+- **`App.jsx`** — React Router v6 with `AuthProvider` wrapping the tree:
+  - `/login`, `/register` — public
+  - `/dashboard`, `/payments` — `<ProtectedRoute>`
+  - `/admin` — `<ProtectedRoute adminOnly>`
+  - `*` → redirect to `/login`
+- **`.env.example`** — documents `VITE_API_BASE_URL`.
+
+**Why Vite over create-react-app (CRA):**
+- **CRA is deprecated** — React no longer recommends it; the maintainers have stopped active development.
+- **Vite's dev server is near-instant** — it uses native ES modules and on-demand compilation (esbuild), so hot-module reload is measured in milliseconds, not seconds.
+- **Vite's build is faster** — it uses Rollup under the hood with tree-shaking, producing smaller bundles.
+- **Active ecosystem** — Vite is maintained by the Vue/Vite team with frequent releases and a growing plugin ecosystem.
+
+**How the ProtectedRoute pattern works (client-side guard):**
+
+```
+<Route path="/payments" element={
+  <ProtectedRoute>           ←── checks token
+    <ManagePayments />       ←── rendered only if auth'd
+  </ProtectedRoute>
+} />
+```
+
+1. ProtectedRoute reads `token` from AuthContext.
+2. If `loading` is true (localStorage still rehydrating), it renders nothing — prevents a flash of the login page.
+3. If `token` is null, it returns `<Navigate to="/login" state={{ from: location }} />` — the user is bounced to login, and the original URL is saved in router state so we can redirect back after login.
+4. If `adminOnly` is true and `user.role !== 'admin'`, it redirects to `/payments`.
+5. Otherwise, it renders `children` (the actual page).
+
+⚠️ **This is purely a UX convenience.** The real security is in the backend: if someone crafted a request without a valid JWT, the `protect` middleware would reject it with 401. The ProtectedRoute just prevents the user from seeing a broken page that can't load data.
+
+**Key files:**
+```
+frontend/src/
+├── api/
+│   ├── axiosClient.js        ← axios instance + JWT interceptor
+│   └── index.js              ← all API call functions
+├── context/
+│   └── AuthContext.jsx       ← user/token state + login/logout + localStorage
+├── components/
+│   └── ProtectedRoute.jsx    ← client-side auth/admin guard
+├── pages/
+│   ├── Login.jsx
+│   ├── Register.jsx
+│   ├── Dashboard.jsx
+│   ├── ManagePayments.jsx    ← placeholder
+│   └── AdminPanel.jsx        ← placeholder
+├── styles/
+│   ├── global.css            ← tokens, reset, forms, buttons
+│   └── auth.css              ← login/register card styles
+├── App.jsx                   ← React Router setup
+└── main.jsx                  ← entry point
+```
