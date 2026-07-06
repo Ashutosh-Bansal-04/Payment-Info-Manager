@@ -184,3 +184,52 @@ backend/src/
 ├── routes/paymentRoutes.js            ← POST / GET / PUT / DELETE, all behind protect
 └── server.js                          ← mounted /api/payments
 ```
+
+---
+
+## Step 6: Admin API (filtered, paginated, populate) — 2026-07-06
+
+**What I built:**
+- **`controllers/adminController.js`** — `getAllPayments` handler:
+  - Returns all `PaymentMethod` documents with `.populate('user', 'username email')` so each result includes the owner's identity.
+  - Supports 8 optional query params: `username`, `paymentType`, `bankName`, `ifscCode`, `paytmNumber`, `upiId`, `paypalEmail`, `usdtAddress`.
+  - Pagination via `?page=` and `?limit=` (default 20, capped at 100). Response includes `totalPages` and `totalResults`.
+- **`routes/adminRoutes.js`** — `GET /payments` behind `protect` + `adminOnly`.
+- **`server.js`** — mounted at `/api/admin`.
+
+**Why — dynamic filter-building:**
+
+The controller starts with an empty filter object `{}` and only adds keys for query params that were actually provided:
+
+```js
+const filter = {};
+if (req.query.paymentType) filter.paymentType = req.query.paymentType;
+for (const [param, field] of Object.entries(TEXT_FILTERS)) {
+  if (req.query[param]) filter[field] = new RegExp(req.query[param], 'i');
+}
+```
+
+- **Empty `{}` = match everything** — if the admin hits `/api/admin/payments` with no params, they see all records.
+- **Each param narrows** — `?paymentType=UPI&upiId=@oksbi` produces `{ paymentType: 'UPI', upiId: /\@oksbi/i }`.
+- **Params compose freely** — any combination works because we're just accumulating keys in one object.
+- **`username` is special** — it lives on the `User` model, not `PaymentMethod`, so we first do a `User.find()` to resolve matching user IDs, then add `{ user: { $in: [...] } }` to the filter.
+- **Regex `'i'` flag** — case-insensitive partial matching so an admin typing "hdfc" matches "HDFC Bank".
+
+**Why `adminOnly` is stacked on top of `protect`, not replacing it:**
+
+```js
+router.use(protect, adminOnly);
+```
+
+- `protect` handles **authentication** — it verifies the JWT, loads the user from the DB, and attaches `req.user`. Without it, `req.user` wouldn't exist at all.
+- `adminOnly` handles **authorisation** — it reads `req.user.role` and checks for `"admin"`. It *depends* on `protect` having already run.
+- If `adminOnly` replaced `protect`, it would have no `req.user` to inspect — it would either crash or need to duplicate all the JWT logic.
+- Stacking keeps each middleware single-responsibility and reusable: `protect` alone guards user routes, `protect + adminOnly` guards admin routes, and neither knows about the other's internals.
+
+**Key files:**
+```
+backend/src/
+├── controllers/adminController.js   ← getAllPayments with dynamic filters + populate
+├── routes/adminRoutes.js            ← GET /payments behind protect + adminOnly
+└── server.js                        ← mounted /api/admin
+```

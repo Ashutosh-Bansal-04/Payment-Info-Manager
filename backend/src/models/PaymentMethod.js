@@ -5,11 +5,11 @@ const mongoose = require('mongoose');
 // Used by both the conditional `required` validators and the toJSON transform.
 // ---------------------------------------------------------------------------
 const FIELDS_BY_TYPE = {
-  Bank:   ['accountHolderName', 'accountNumber', 'ifscCode', 'bankName', 'branchName'],
-  Paytm:  ['paytmNumber'],
-  UPI:    ['upiId'],
+  Bank: ['accountHolderName', 'accountNumber', 'ifscCode', 'bankName', 'branchName'],
+  Paytm: ['paytmNumber'],
+  UPI: ['upiId'],
   PayPal: ['paypalEmail'],
-  USDT:   ['usdtAddress'],
+  USDT: ['usdtAddress'],
 };
 
 // ---------------------------------------------------------------------------

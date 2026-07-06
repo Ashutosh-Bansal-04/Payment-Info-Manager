@@ -20,6 +20,9 @@ app.use('/api/auth', require('./routes/authRoutes'));
 // Payment routes (all require auth — protect middleware applied in router)
 app.use('/api/payments', require('./routes/paymentRoutes'));
 
+// Admin routes (require auth + admin role)
+app.use('/api/admin', require('./routes/adminRoutes'));
+
 // --------------- Start ---------------
 const PORT = process.env.PORT || 5000;
 
