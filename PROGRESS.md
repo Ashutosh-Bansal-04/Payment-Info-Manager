@@ -145,3 +145,42 @@ backend/src/
 backend/src/
 └── models/PaymentMethod.js   ← single-collection schema with conditional validation + toJSON transform
 ```
+
+---
+
+## Step 5: Payment CRUD API (ownership-checked) — 2026-07-06
+
+**What I built:**
+- **`controllers/paymentController.js`** — four handlers:
+  - `addPaymentMethod` — validates `paymentType` + its required fields (via a `FIELDS_BY_TYPE` mirror of the model's map), then creates the doc with `user: req.user._id` (always set server-side, never from the client).
+  - `getMyPaymentMethods` — `find({ user: req.user._id })` sorted by `createdAt: -1` (newest first).
+  - `updatePaymentMethod` — finds by `_id`, ownership-checks, validates if type is changing, then `Object.assign` + `save()` to trigger Mongoose validation.
+  - `deletePaymentMethod` — finds by `_id`, ownership-checks, then `deleteOne()`.
+- **`routes/paymentRoutes.js`** — thin router with `router.use(protect)` applied once at the top:
+  - `POST /` · `GET /` · `PUT /:id` · `DELETE /:id`
+- **`server.js`** — mounted at `/api/payments`.
+
+**Why — the ownership-check pattern:**
+
+Every `update` and `delete` follows the same two-step pattern:
+```
+1. const method = await PaymentMethod.findById(req.params.id);  // find the doc
+2. if (method.user.toString() !== req.user._id.toString()) → 403
+```
+
+**Why this matters for security:**
+- The `protect` middleware only proves the caller is *some* authenticated user — it does NOT prove they own the specific document they're trying to modify.
+- MongoDB ObjectIds are 24-character hex strings. They're not truly secret — they can be guessed, enumerated, or leaked in logs/URLs.
+- Without the ownership check, User A could call `PUT /api/payments/<User-B's-doc-id>` and silently overwrite User B's bank details. This is a classic **Insecure Direct Object Reference (IDOR)** vulnerability (OWASP Top 10).
+- The check ensures **authorisation** (are you allowed to touch *this* resource?) on top of **authentication** (are you who you say you are?).
+- We return `404` if the doc doesn't exist and `403` if it exists but belongs to someone else. The two distinct codes let the client show the right error without leaking information about other users' data (the 403 only fires after we've confirmed the document exists, and the requesting user is authenticated anyway).
+
+**`user` field is always server-set:** In `addPaymentMethod`, `user: req.user._id` overrides whatever the client sends, so a malicious request body like `{ user: "<someone-else's-id>" }` is harmless.
+
+**Key files:**
+```
+backend/src/
+├── controllers/paymentController.js   ← CRUD + ownership checks
+├── routes/paymentRoutes.js            ← POST / GET / PUT / DELETE, all behind protect
+└── server.js                          ← mounted /api/payments
+```

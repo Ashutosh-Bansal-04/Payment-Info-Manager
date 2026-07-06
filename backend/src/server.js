@@ -17,8 +17,8 @@ app.get('/api/health', (_req, res) => {
 // Auth routes
 app.use('/api/auth', require('./routes/authRoutes'));
 
-// Future route mounts:
-// app.use('/api/payments', require('./routes/paymentRoutes'));
+// Payment routes (all require auth — protect middleware applied in router)
+app.use('/api/payments', require('./routes/paymentRoutes'));
 
 // --------------- Start ---------------
 const PORT = process.env.PORT || 5000;
