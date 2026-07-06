@@ -298,3 +298,44 @@ frontend/src/
 ├── App.jsx                   ← React Router setup
 └── main.jsx                  ← entry point
 ```
+
+---
+
+## Step 8: Login & Register Pages (validation + premium CSS) — 2026-07-07
+
+**What I built:**
+- **`pages/Register.jsx`** — added a **Confirm Password** field and full client-side validation:
+  - Username required, email format regex, password ≥ 6 chars, passwords must match.
+  - Uses `noValidate` on the form to suppress browser defaults and show our own styled error banner.
+  - On success: stores token + user via `AuthContext.login()`, redirects to `/payments`.
+- **`pages/Login.jsx`** — added client-side validation (email format, required fields) before calling the API.
+- **`styles/auth.css`** — premium mobile-first overhaul:
+  - Subtle gradient background (`linear-gradient` on the page).
+  - Card slide-in animation (`@keyframes auth-card-in`).
+  - Shake animation on error (`@keyframes auth-shake`).
+  - Gradient primary button with hover lift + shadow.
+  - Uppercase labels, rounded inputs with focus glow.
+  - `100dvh` for proper mobile viewport handling.
+  - Responsive `@media` breakpoint at 440px.
+
+**Why — client-side validation vs. server-side validation:**
+
+| Aspect | Client-side (JS in the browser) | Server-side (Express controller) |
+|--------|---------------------------------|----------------------------------|
+| **Speed** | Instant — no network round-trip. The user sees "Passwords do not match" before any request is sent. | Requires a request → server processing → response. Even on fast connections, that's 50–200ms. |
+| **UX** | Better — errors appear immediately, the submit button isn't even clicked wastefully. | Acceptable, but slower feedback loop. |
+| **Security** | **None** — anyone can open DevTools, disable JS, or call the API directly with curl. Client-side validation is trivially bypassable. | **The real gatekeeper.** The server rejects bad input regardless of what the client does. |
+| **Bypassability** | Completely bypassable | Cannot be bypassed without access to the server itself |
+
+**Why both are implemented:**
+1. **Client-side** catches obvious mistakes instantly (empty fields, mismatched passwords, bad email format) and prevents unnecessary API calls — this is a **UX optimisation**.
+2. **Server-side** (in `authController.js`) re-validates everything and is the **security boundary**. Even if a malicious actor bypasses the React form entirely, the server will reject invalid input with proper 400/401 errors.
+3. The two layers are **complementary, not redundant**: client = fast feedback, server = enforced rules.
+
+**Key files:**
+```
+frontend/src/
+├── pages/Login.jsx       ← client-side validation + API call + AuthContext
+├── pages/Register.jsx    ← confirm password + client-side validation + API call
+└── styles/auth.css       ← premium card layout, animations, gradient button
+```
