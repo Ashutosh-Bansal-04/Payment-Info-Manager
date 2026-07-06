@@ -11,7 +11,7 @@ app.use(express.json());
 
 // --------------- Routes ---------------
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
 // Future route mounts will go here:
@@ -21,10 +21,15 @@ app.get('/api/health', (_req, res) => {
 // --------------- Start ---------------
 const PORT = process.env.PORT || 5000;
 
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+connectDB()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to start server:', err.message);
+    process.exit(1);
   });
-});
 
 module.exports = app;
