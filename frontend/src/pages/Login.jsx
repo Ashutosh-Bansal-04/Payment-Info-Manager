@@ -40,7 +40,10 @@ export default function Login() {
       login(data.token, data.user);
       navigate('/payments');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setError(
+        err.response?.data?.message ||
+        (err.request ? 'Cannot reach the server. Please check your connection.' : 'Login failed. Please try again.')
+      );
     } finally {
       setLoading(false);
     }

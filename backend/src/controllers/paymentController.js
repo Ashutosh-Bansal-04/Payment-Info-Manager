@@ -1,6 +1,6 @@
 const PaymentMethod = require('../models/PaymentMethod');
+const AppError = require('../utils/AppError');
 
-// Re-use the same field map from the model so validation stays in sync.
 const FIELDS_BY_TYPE = {
   Bank:   ['accountHolderName', 'accountNumber', 'ifscCode', 'bankName', 'branchName'],
   Paytm:  ['paytmNumber'],
@@ -9,150 +9,128 @@ const FIELDS_BY_TYPE = {
   USDT:   ['usdtAddress'],
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// Max length for any text field — prevents oversized payloads
+const MAX_FIELD_LEN = 200;
 
-/**
- * Validate that every field required for the given paymentType is present
- * in the request body. Returns an array of missing field names (empty = valid).
- */
 const getMissingFields = (paymentType, body) => {
   const required = FIELDS_BY_TYPE[paymentType];
-  if (!required) return []; // schema enum validation will catch invalid types
+  if (!required) return [];
   return required.filter((f) => !body[f] || String(body[f]).trim() === '');
 };
 
-// ---------------------------------------------------------------------------
-// Controllers
-// ---------------------------------------------------------------------------
+/** Validate that no text field exceeds MAX_FIELD_LEN */
+const checkFieldLengths = (paymentType, body) => {
+  const fields = FIELDS_BY_TYPE[paymentType] || [];
+  for (const f of fields) {
+    if (body[f] && String(body[f]).length > MAX_FIELD_LEN) {
+      throw new AppError(`${f} must be at most ${MAX_FIELD_LEN} characters.`, 400);
+    }
+  }
+};
+
+// --------------- Controllers ---------------
 
 /**
  * POST /api/payments
- * Creates a new payment method for the logged-in user.
  */
-const addPaymentMethod = async (req, res) => {
+const addPaymentMethod = async (req, res, next) => {
   try {
     const { paymentType } = req.body;
 
     if (!paymentType) {
-      return res.status(400).json({ message: 'paymentType is required.' });
+      throw new AppError('paymentType is required.', 400);
     }
 
-    // Validate type-specific required fields before hitting Mongoose
     const missing = getMissingFields(paymentType, req.body);
     if (missing.length > 0) {
-      return res.status(400).json({
-        message: `Missing required fields for ${paymentType}: ${missing.join(', ')}`,
-      });
+      throw new AppError(`Missing required fields for ${paymentType}: ${missing.join(', ')}`, 400);
     }
+
+    checkFieldLengths(paymentType, req.body);
 
     const doc = await PaymentMethod.create({
       ...req.body,
-      user: req.user._id, // always override with authenticated user
+      user: req.user._id, // always server-set
     });
 
     res.status(201).json(doc);
   } catch (err) {
-    // Mongoose validation errors (e.g. invalid enum value)
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map((e) => e.message);
-      return res.status(400).json({ message: messages.join('. ') });
-    }
-    console.error('addPaymentMethod error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err);
   }
 };
 
 /**
  * GET /api/payments
- * Returns all payment methods belonging to the logged-in user, newest first.
  */
-const getMyPaymentMethods = async (req, res) => {
+const getMyPaymentMethods = async (req, res, next) => {
   try {
     const methods = await PaymentMethod.find({ user: req.user._id }).sort({ createdAt: -1 });
     res.json(methods);
   } catch (err) {
-    console.error('getMyPaymentMethods error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err);
   }
 };
 
 /**
  * PUT /api/payments/:id
- * Updates an existing payment method — only if it belongs to the logged-in user.
  */
-const updatePaymentMethod = async (req, res) => {
+const updatePaymentMethod = async (req, res, next) => {
   try {
     const method = await PaymentMethod.findById(req.params.id);
 
     if (!method) {
-      return res.status(404).json({ message: 'Payment method not found.' });
+      throw new AppError('Payment method not found.', 404);
     }
 
     // ---- Ownership check ----
-    // Compare the document's `user` field against the authenticated user.
-    // Without this, any logged-in user could update another user's payment
-    // info simply by guessing or enumerating document IDs.
     if (method.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorised to update this payment method.' });
+      throw new AppError('Not authorised to update this payment method.', 403);
     }
 
-    // If paymentType is being changed, validate the new type's required fields
-    const effectiveType = req.body.paymentType || method.paymentType;
+    // Validate if type is changing
     if (req.body.paymentType && req.body.paymentType !== method.paymentType) {
       const missing = getMissingFields(req.body.paymentType, req.body);
       if (missing.length > 0) {
-        return res.status(400).json({
-          message: `Missing required fields for ${req.body.paymentType}: ${missing.join(', ')}`,
-        });
+        throw new AppError(
+          `Missing required fields for ${req.body.paymentType}: ${missing.join(', ')}`,
+          400
+        );
       }
     }
 
-    // Apply updates
+    const effectiveType = req.body.paymentType || method.paymentType;
+    checkFieldLengths(effectiveType, req.body);
+
     Object.assign(method, req.body);
-    method.user = req.user._id; // prevent user field from being overwritten
-    const updated = await method.save(); // triggers Mongoose validation
+    method.user = req.user._id; // prevent user field override
+    const updated = await method.save();
 
     res.json(updated);
   } catch (err) {
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map((e) => e.message);
-      return res.status(400).json({ message: messages.join('. ') });
-    }
-    if (err.name === 'CastError') {
-      return res.status(404).json({ message: 'Payment method not found.' });
-    }
-    console.error('updatePaymentMethod error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err);
   }
 };
 
 /**
  * DELETE /api/payments/:id
- * Deletes a payment method — only if it belongs to the logged-in user.
  */
-const deletePaymentMethod = async (req, res) => {
+const deletePaymentMethod = async (req, res, next) => {
   try {
     const method = await PaymentMethod.findById(req.params.id);
 
     if (!method) {
-      return res.status(404).json({ message: 'Payment method not found.' });
+      throw new AppError('Payment method not found.', 404);
     }
 
-    // ---- Ownership check (same pattern as update) ----
+    // ---- Ownership check ----
     if (method.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorised to delete this payment method.' });
+      throw new AppError('Not authorised to delete this payment method.', 403);
     }
 
     await method.deleteOne();
     res.json({ message: 'Payment method deleted.' });
   } catch (err) {
-    if (err.name === 'CastError') {
-      return res.status(404).json({ message: 'Payment method not found.' });
-    }
-    console.error('deletePaymentMethod error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err);
   }
 };
 

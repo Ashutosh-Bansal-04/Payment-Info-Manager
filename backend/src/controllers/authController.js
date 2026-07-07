@@ -1,20 +1,20 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AppError = require('../utils/AppError');
 
 // --------------- Helpers ---------------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Build a signed JWT for the given user id.
- */
+// Input length caps — prevents abuse / oversized payloads
+const MAX_USERNAME = 50;
+const MAX_EMAIL = 100;
+const MAX_PASSWORD = 128;
+
 const signToken = (userId) =>
   jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-/**
- * Strip the password field and return a plain user object safe for the client.
- */
 const sanitiseUser = (user) => {
   const obj = user.toObject();
   delete obj.password;
@@ -25,27 +25,35 @@ const sanitiseUser = (user) => {
 
 /**
  * POST /api/auth/register
- * Body: { username, email, password }
  */
-const register = async (req, res) => {
+const register = async (req, res, next) => {
   try {
     const { username, email, password } = req.body;
 
-    // ---- Input validation ----
+    // ---- Input validation with length limits ----
     if (!username || !email || !password) {
-      return res.status(400).json({ message: 'Username, email, and password are required.' });
+      throw new AppError('Username, email, and password are required.', 400);
+    }
+    if (typeof username !== 'string' || username.length > MAX_USERNAME) {
+      throw new AppError(`Username must be at most ${MAX_USERNAME} characters.`, 400);
+    }
+    if (typeof email !== 'string' || email.length > MAX_EMAIL) {
+      throw new AppError(`Email must be at most ${MAX_EMAIL} characters.`, 400);
     }
     if (!EMAIL_RE.test(email)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+      throw new AppError('Please provide a valid email address.', 400);
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    if (typeof password !== 'string' || password.length < 6) {
+      throw new AppError('Password must be at least 6 characters.', 400);
+    }
+    if (password.length > MAX_PASSWORD) {
+      throw new AppError(`Password must be at most ${MAX_PASSWORD} characters.`, 400);
     }
 
     // ---- Duplicate check ----
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
-      return res.status(409).json({ message: 'An account with this email already exists.' });
+      throw new AppError('An account with this email already exists.', 409);
     }
 
     // ---- Hash & create ----
@@ -53,56 +61,56 @@ const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      username,
+      username: username.trim(),
       email,
       password: hashedPassword,
     });
 
-    // ---- Respond ----
     const token = signToken(user._id);
     res.status(201).json({ token, user: sanitiseUser(user) });
   } catch (err) {
-    console.error('Register error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err); // → centralized errorHandler
   }
 };
 
 /**
  * POST /api/auth/login
- * Body: { email, password }
  */
-const login = async (req, res) => {
+const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
     // ---- Input validation ----
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required.' });
+      throw new AppError('Email and password are required.', 400);
+    }
+    if (typeof email !== 'string' || email.length > MAX_EMAIL) {
+      throw new AppError('Invalid email.', 400);
     }
     if (!EMAIL_RE.test(email)) {
-      return res.status(400).json({ message: 'Please provide a valid email address.' });
+      throw new AppError('Please provide a valid email address.', 400);
+    }
+    if (typeof password !== 'string' || password.length > MAX_PASSWORD) {
+      throw new AppError('Invalid credentials.', 401);
     }
 
     // ---- Authenticate ----
-    // Generic message prevents leaking whether email or password was wrong.
     const INVALID_MSG = 'Invalid email or password.';
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(401).json({ message: INVALID_MSG });
+      throw new AppError(INVALID_MSG, 401);
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: INVALID_MSG });
+      throw new AppError(INVALID_MSG, 401);
     }
 
-    // ---- Respond ----
     const token = signToken(user._id);
     res.json({ token, user: sanitiseUser(user) });
   } catch (err) {
-    console.error('Login error:', err.message);
-    res.status(500).json({ message: 'Server error. Please try again later.' });
+    next(err);
   }
 };
 

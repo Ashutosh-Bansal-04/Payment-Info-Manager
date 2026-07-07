@@ -64,7 +64,10 @@ export default function AdminPanel() {
       setTotalPages(data.totalPages);
       setTotalResults(data.totalResults);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to fetch payments.');
+      setError(
+        err.response?.data?.message ||
+        (err.request ? 'Cannot reach the server. Please check your connection.' : 'Failed to fetch payments.')
+      );
       setResults([]);
     } finally {
       setLoading(false);

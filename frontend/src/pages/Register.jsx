@@ -44,7 +44,10 @@ export default function Register() {
       login(data.token, data.user);
       navigate('/payments');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      setError(
+        err.response?.data?.message ||
+        (err.request ? 'Cannot reach the server. Please check your connection.' : 'Registration failed. Please try again.')
+      );
     } finally {
       setLoading(false);
     }

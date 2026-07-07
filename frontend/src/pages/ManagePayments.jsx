@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../components/Navbar';
 import PaymentModal from '../components/PaymentModal';
+import { useToast } from '../context/ToastContext';
 import { getMyPayments, addPayment, updatePayment, deletePayment } from '../api';
 import '../styles/payments.css';
 
@@ -42,6 +43,8 @@ export default function ManagePayments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const { addToast } = useToast();
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMethod, setEditingMethod] = useState(null); // null = add mode
@@ -57,7 +60,10 @@ export default function ManagePayments() {
       const { data } = await getMyPayments();
       setMethods(data);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load payment methods.');
+      setError(
+        err.response?.data?.message ||
+        (err.request ? 'Cannot reach the server. Please check your connection.' : 'Failed to load payment methods.')
+      );
     } finally {
       setLoading(false);
     }
@@ -83,8 +89,10 @@ export default function ManagePayments() {
   const handleSave = async (formData) => {
     if (editingMethod) {
       await updatePayment(editingMethod._id, formData);
+      addToast('Payment method updated!', 'success');
     } else {
       await addPayment(formData);
+      addToast('Payment method added!', 'success');
     }
     await fetchPayments();
   };
@@ -100,9 +108,10 @@ export default function ManagePayments() {
     try {
       await deletePayment(deleteTarget._id);
       setDeleteTarget(null);
+      addToast('Payment method deleted.', 'success');
       await fetchPayments();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete.');
+      addToast(err.response?.data?.message || 'Failed to delete.', 'error');
       setDeleteTarget(null);
     } finally {
       setDeleting(false);

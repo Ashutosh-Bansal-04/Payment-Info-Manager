@@ -444,3 +444,89 @@ frontend/src/
 ├── pages/AdminPanel.jsx     ← filter bar + table + pagination, wired to /api/admin/payments
 └── styles/admin.css         ← desktop-first grid filters, data table, pagination
 ```
+
+---
+
+## Step 11: Robustness Review & Hardening — 2026-07-08
+
+**What was hardened:**
+
+### Backend
+
+1. **Centralized error handler** (`middleware/errorHandler.js`):
+   - Catches all errors thrown via `next(err)` from any route/controller.
+   - Returns consistent `{ message, details? }` JSON with the right HTTP status code.
+   - Handles Mongoose `ValidationError` (400), `CastError` (404), duplicate key (409), and generic 500s.
+   - Custom `AppError` class (`utils/AppError.js`) carries a `statusCode` so controllers just `throw new AppError('...', 400)`.
+
+2. **Rate limiting on auth routes** (`express-rate-limit`):
+   - Register: 10 requests per 15-min window per IP.
+   - Login: 20 requests per 15-min window per IP.
+   - Returns JSON `{ message }` when limit is hit, not raw HTML.
+
+3. **Input length limits**:
+   - `express.json({ limit: '10kb' })` — caps request body size globally.
+   - Auth controller: username ≤ 50 chars, email ≤ 100, password 6–128.
+   - Payment controller: all text fields ≤ 200 chars.
+
+4. **Controller refactoring** — all three controllers (`authController`, `paymentController`, `adminController`) now use `throw AppError` + `next(err)` instead of ad-hoc `res.status().json()` in catch blocks.
+
+5. **Auth middleware refactored** — `protect` and `adminOnly` now use `next(new AppError(...))` so their errors also flow through the centralized handler.
+
+6. **Ownership checks verified** — every PUT/DELETE in `paymentController.js` checks `method.user.toString() !== req.user._id.toString()` before acting, and re-sets `method.user = req.user._id` before save to prevent user-field override via request body.
+
+### Frontend
+
+1. **Global toast notification system** (`context/ToastContext.jsx`, `styles/toast.css`):
+   - `addToast(message, 'success' | 'error' | 'info')` from any component.
+   - Auto-dismisses after 4s, manual dismiss via ✕ button.
+   - Slide-up animation, fixed bottom-center, color-coded by type.
+
+2. **Toast wired into ManagePayments**: "Payment method added!", "...updated!", "...deleted." on success; error toast on delete failure.
+
+3. **Backend-unreachable handling on all pages**:
+   - Axios errors without `err.response` (no response received) now show "Cannot reach the server. Please check your connection." instead of a generic fallback.
+   - Login, Register, ManagePayments, and AdminPanel all handle this.
+
+4. **Form validation** — all forms use inline error banners (not `alert()`), `noValidate` to suppress browser defaults, and custom `validate()` functions.
+
+5. **Loading states** — spinner on payments list, spinner on admin table, disabled button during form submission.
+
+---
+
+### ⚠️ Known limitations for production
+
+| Area | Limitation | What a production app would add |
+|------|-----------|-------------------------------|
+| **Email verification** | Users can register with any email — no verification step. | Send a confirmation link on register; mark `isVerified` on the User model. |
+| **Refresh tokens** | JWT expires after 7 days with no refresh flow. User must re-login. | Short-lived access token (15 min) + long-lived refresh token (httpOnly cookie) with rotation. |
+| **Password reset** | No "forgot password" flow. | Email-based reset with a time-limited token. |
+| **HTTPS** | Dev runs on HTTP. JWTs and passwords are sent in plaintext over the wire. | Enforce HTTPS in production; set `Secure` flag on cookies. |
+| **CSRF** | JWT is stored in localStorage, not httpOnly cookie, so no CSRF risk — but XSS could steal the token. | Consider httpOnly cookies for token storage (trades CSRF risk for XSS risk, mitigated with SameSite). |
+| **Helmet** | No security headers set. | Use `helmet` middleware to set CSP, X-Frame-Options, etc. |
+| **Logging** | Only `console.log/error`. | Use `winston` or `pino` with structured JSON logging and log levels. |
+| **Tests** | No automated tests. | Unit tests (Jest), integration tests (supertest), E2E tests (Playwright/Cypress). |
+| **Input sanitisation** | Regex filters in admin are built from user input — potential ReDoS risk on crafted patterns. | Sanitise or escape regex special chars with a library like `escape-string-regexp`. |
+| **Rate limiting scope** | In-memory store resets on server restart; not shared across instances. | Use Redis-backed store (`rate-limit-redis`) in production. |
+
+**Key files changed:**
+```
+backend/src/
+├── utils/AppError.js                ← custom error class
+├── middleware/errorHandler.js       ← centralized Express error handler
+├── middleware/authMiddleware.js     ← refactored to use AppError
+├── controllers/authController.js   ← input length limits + AppError
+├── controllers/paymentController.js← field length caps + AppError
+├── controllers/adminController.js  ← AppError
+├── routes/authRoutes.js            ← rate limiting
+└── server.js                       ← body size limit, errorHandler mount
+
+frontend/src/
+├── context/ToastContext.jsx         ← global toast system
+├── styles/toast.css                 ← toast styles
+├── pages/ManagePayments.jsx        ← toast notifications wired
+├── pages/Login.jsx                 ← backend-unreachable handling
+├── pages/Register.jsx              ← backend-unreachable handling
+├── pages/AdminPanel.jsx            ← backend-unreachable handling
+└── App.jsx                         ← ToastProvider wrapper
+```

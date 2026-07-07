@@ -1,16 +1,17 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AppError = require('../utils/AppError');
 
 /**
  * protect – verifies the JWT from the Authorization header (Bearer <token>),
  * attaches the full user document (minus password) to req.user.
  */
-const protect = async (req, res, next) => {
+const protect = async (req, _res, next) => {
   try {
     // ---- Extract token ----
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'Not authorised — no token provided.' });
+      throw new AppError('Not authorised — no token provided.', 401);
     }
 
     const token = authHeader.split(' ')[1];
@@ -21,16 +22,19 @@ const protect = async (req, res, next) => {
     // ---- Attach user (without password) ----
     const user = await User.findById(decoded.id).select('-password');
     if (!user) {
-      return res.status(401).json({ message: 'Not authorised — user no longer exists.' });
+      throw new AppError('Not authorised — user no longer exists.', 401);
     }
 
     req.user = user;
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: 'Not authorised — token has expired.' });
+    if (err.isOperational) {
+      return next(err); // our AppError
     }
-    return res.status(401).json({ message: 'Not authorised — invalid token.' });
+    if (err.name === 'TokenExpiredError') {
+      return next(new AppError('Not authorised — token has expired.', 401));
+    }
+    return next(new AppError('Not authorised — invalid token.', 401));
   }
 };
 
@@ -38,11 +42,11 @@ const protect = async (req, res, next) => {
  * adminOnly – must be used AFTER protect.
  * Rejects with 403 if the authenticated user is not an admin.
  */
-const adminOnly = (_req, res, next) => {
-  if (_req.user && _req.user.role === 'admin') {
+const adminOnly = (req, _res, next) => {
+  if (req.user && req.user.role === 'admin') {
     return next();
   }
-  return res.status(403).json({ message: 'Forbidden — admin access required.' });
+  return next(new AppError('Forbidden — admin access required.', 403));
 };
 
 module.exports = { protect, adminOnly };
