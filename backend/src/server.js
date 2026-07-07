@@ -48,7 +48,7 @@ app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 // --------------- 404 catch-all for unmatched API routes ---------------
-app.all('/api/*', (req, _res, next) => {
+app.all('/api/{*path}', (req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
 });
 
