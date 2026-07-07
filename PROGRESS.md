@@ -573,3 +573,37 @@ frontend/src/
 
 **Total commits:** 12 (one per step)
 **Total files:** ~35 source files across backend and frontend
+
+---
+
+## Step 13: Full Audit + Production Hardening — 2026-07-08
+
+**Stage 1 — AUDIT.md created**: every requirement inspected with file-level evidence.
+
+**Gaps found and fixed (Stage 2 + 3):**
+
+| # | Gap | Fix |
+|---|-----|-----|
+| 1 | No `helmet` → no security headers | Installed `helmet`, added `app.use(helmet())` in `server.js` |
+| 2 | CORS was `cors()` (wildcard `*`) | Locked to explicit `allowedOrigins` array: `FRONTEND_URL` env var + localhost:5173/4173 |
+| 3 | No 404 catch-all for unmatched API routes | Added `app.all('/api/*', ...)` → returns JSON `{ message: "Route not found: ..." }` |
+| 4 | Admin regex from raw user input (NoSQL injection / ReDoS) | Added `escapeRegex()` to escape all special regex characters before building `$regex`. Also validates `paymentType` against exact enum values |
+| 5 | No `process.on('unhandledRejection')` | Added both `unhandledRejection` and `uncaughtException` handlers |
+| 6 | `index.html` title was "frontend" (Vite default) | Changed to "Payment Info Manager" + added meta description |
+| 7 | favicon was Vite default lightning bolt | Replaced with custom indigo gradient square + ₹ currency symbol |
+| 8 | No `_redirects` for Netlify SPA routing | Created `frontend/public/_redirects` with `/*  /index.html  200` |
+| 9 | Backend `.env.example` missing `FRONTEND_URL` | Added `FRONTEND_URL=http://localhost:5173` |
+| 10 | Frontend build not verified | Ran `npm run build` — clean, 93 modules, no errors |
+
+**Key files changed:**
+```
+backend/src/
+├── server.js                     ← helmet, locked CORS, 404 catch-all, process handlers
+├── controllers/adminController.js ← escapeRegex() on all filter inputs
+└── .env.example                  ← added FRONTEND_URL
+
+frontend/
+├── index.html                    ← title + meta description
+├── public/favicon.svg            ← custom app favicon
+└── public/_redirects             ← Netlify SPA routing
+```

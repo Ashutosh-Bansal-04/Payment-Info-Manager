@@ -1,6 +1,14 @@
 const PaymentMethod = require('../models/PaymentMethod');
 const User = require('../models/User');
 
+/**
+ * Escape special regex characters in user-supplied strings.
+ * Prevents NoSQL injection via $regex and ReDoS via crafted patterns.
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const TEXT_FILTERS = {
   bankName:     'bankName',
   ifscCode:     'ifscCode',
@@ -18,18 +26,23 @@ const getAllPayments = async (req, res, next) => {
     const filter = {};
 
     if (req.query.paymentType) {
-      filter.paymentType = req.query.paymentType;
+      // Exact match — no regex needed for enum
+      const validTypes = ['Bank', 'Paytm', 'UPI', 'PayPal', 'USDT'];
+      if (validTypes.includes(req.query.paymentType)) {
+        filter.paymentType = req.query.paymentType;
+      }
     }
 
     for (const [param, field] of Object.entries(TEXT_FILTERS)) {
       if (req.query[param]) {
-        filter[field] = new RegExp(req.query[param], 'i');
+        // Escape regex special chars before building the pattern
+        filter[field] = new RegExp(escapeRegex(req.query[param]), 'i');
       }
     }
 
     if (req.query.username) {
       const matchingUsers = await User.find({
-        username: new RegExp(req.query.username, 'i'),
+        username: new RegExp(escapeRegex(req.query.username), 'i'),
       }).select('_id');
 
       filter.user = { $in: matchingUsers.map((u) => u._id) };
@@ -56,7 +69,7 @@ const getAllPayments = async (req, res, next) => {
       results: methods,
     });
   } catch (err) {
-    next(err); // → centralized errorHandler
+    next(err);
   }
 };
 

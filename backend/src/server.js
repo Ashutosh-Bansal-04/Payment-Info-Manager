@@ -1,14 +1,36 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const connectDB = require('./config/db');
+const errorHandler = require('./middleware/errorHandler');
+const AppError = require('./utils/AppError');
 
 const app = express();
 
-const errorHandler = require('./middleware/errorHandler');
+// --------------- Security ---------------
+app.use(helmet()); // sets secure HTTP headers (CSP, X-Frame-Options, etc.)
 
-// --------------- Middleware ---------------
-app.use(cors());
+// CORS — lock to explicit allowed origins, never wildcard in production
+const allowedOrigins = [
+  process.env.FRONTEND_URL,       // deployed frontend (e.g. https://payment-info-manager.netlify.app)
+  'http://localhost:5173',         // Vite dev server
+  'http://localhost:4173',         // Vite preview
+].filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    // Allow requests with no origin (server-to-server, curl, Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
+  },
+  credentials: true,
+}));
+
+// --------------- Body parsing ---------------
 app.use(express.json({ limit: '10kb' })); // cap body size to prevent abuse
 
 // --------------- Routes ---------------
@@ -24,6 +46,11 @@ app.use('/api/payments', require('./routes/paymentRoutes'));
 
 // Admin routes (require auth + admin role)
 app.use('/api/admin', require('./routes/adminRoutes'));
+
+// --------------- 404 catch-all for unmatched API routes ---------------
+app.all('/api/*', (req, _res, next) => {
+  next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
+});
 
 // --------------- Centralized Error Handler (must be last) ---------------
 app.use(errorHandler);
@@ -41,5 +68,16 @@ connectDB()
     console.error('Failed to start server:', err.message);
     process.exit(1);
   });
+
+// --------------- Global safety nets ---------------
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION:', err);
+  // In production you'd gracefully shut down; in dev just log it
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
 
 module.exports = app;
