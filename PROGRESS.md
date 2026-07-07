@@ -408,3 +408,39 @@ frontend/src/
     ├── payments.css        ← cards, modal, chips, animations, empty state
     └── navbar.css          ← top nav styles
 ```
+
+---
+
+## Step 10: Admin Panel (filter bar + table + pagination) — 2026-07-08
+
+**What I built:**
+- **`pages/AdminPanel.jsx`** — admin-only page with:
+  - **Filter bar**: 8 optional inputs (Username, Payment Type dropdown, Bank Name, IFSC Code, Paytm Number, UPI ID, PayPal Email, USDT Address) in a responsive CSS grid. All combinable — only non-empty values are sent as query params.
+  - **Search / Reset** buttons — Search calls `GET /api/admin/payments?...`, Reset clears all filters and results.
+  - **Results table**: columns for Username, Email, Payment Type (badge), and a Details column showing type-relevant fields (e.g. "HDFC Bank / ****1234 (IFSC: HDFC0001234)" for Bank).
+  - **Pagination**: Previous/Next buttons with page indicator, driven by `page`/`limit` params from the backend.
+  - **States**: loading spinner, empty "no results" message, error banner. The initial state before any search shows nothing (no auto-fetch).
+- **`styles/admin.css`** — desktop-first dense layout:
+  - CSS grid filter bar (`repeat(auto-fill, minmax(200px, 1fr))`).
+  - Clean data table with uppercase headers, hover rows, type badge pills.
+  - Centered pagination controls.
+  - Responsive fallback at 640px (single-column filters, smaller table text).
+
+**Why table layout for admin vs. card layout for users:**
+
+| Aspect | ManagePayments (user) | AdminPanel (admin) |
+|--------|----------------------|-------------------|
+| **Audience** | Regular user managing their own 2–5 payment methods | Admin searching across hundreds/thousands of records for all users |
+| **Data volume** | Handful of entries — each one matters, worth giving visual weight | Bulk data — need to scan many rows quickly to find specific records |
+| **Primary action** | CRUD (add/edit/delete) — cards give room for action buttons and clear visual separation | Read-only lookup — no edit/delete needed, just search + scan |
+| **Layout pattern** | Cards: spacious, one per row, large touch targets, app-like mobile feel | Table: dense, many rows visible at once, column headers enable quick comparison |
+| **Device** | Mobile-first — cards stack naturally in a single column | Desktop/web — table maximises information density on wide screens |
+
+A table would be cramped and hard to tap on mobile; cards would waste space showing only 4–5 rows on a desktop admin screen where the admin needs to scan dozens of results. Each layout is optimised for its audience's task and device.
+
+**Key files:**
+```
+frontend/src/
+├── pages/AdminPanel.jsx     ← filter bar + table + pagination, wired to /api/admin/payments
+└── styles/admin.css         ← desktop-first grid filters, data table, pagination
+```
