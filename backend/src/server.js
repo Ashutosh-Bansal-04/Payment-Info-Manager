@@ -9,14 +9,18 @@ const AppError = require('./utils/AppError');
 const app = express();
 
 // --------------- Security ---------------
-app.use(helmet()); // sets secure HTTP headers (CSP, X-Frame-Options, etc.)
+// Helmet — secure HTTP headers, but allow cross-origin requests from our frontend
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: false,
+}));
 
 // CORS — lock to explicit allowed origins, never wildcard in production
 const allowedOrigins = [
-  process.env.FRONTEND_URL,       // deployed frontend (e.g. https://payment-info-manager.netlify.app)
+  process.env.FRONTEND_URL,       // deployed frontend (e.g. https://payment-info-manager.vercel.app)
   'http://localhost:5173',         // Vite dev server
   'http://localhost:4173',         // Vite preview
-].filter(Boolean);
+].filter(Boolean).map(u => u.replace(/\/+$/, '')); // strip trailing slashes
 
 app.use(cors({
   origin(origin, callback) {
@@ -24,6 +28,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn(`CORS blocked origin: ${origin}. Allowed: ${allowedOrigins.join(', ')}`);
       callback(new Error(`CORS: origin ${origin} not allowed`));
     }
   },
